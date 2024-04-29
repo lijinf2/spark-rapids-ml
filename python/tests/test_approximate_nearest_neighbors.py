@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from _pytest.logging import LogCaptureFixture
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import col
+from pyspark.sql.functions import col, udf
 from pyspark.sql.types import Row
 from sklearn.datasets import make_blobs
 
@@ -14,6 +14,7 @@ from spark_rapids_ml.knn import (
     ApproximateNearestNeighbors,
     ApproximateNearestNeighborsModel,
 )
+from spark_rapids_ml.utils import _concat_and_free
 
 from .sparksession import CleanSparkSession
 from .test_nearest_neighbors import (
@@ -220,3 +221,78 @@ def test_ivfflat(
             r1 = reconstructed_collect[i]
             r2 = knn_df_collect[i]
             assert_row_equal(r1, r2)
+
+
+@pytest.mark.parametrize("data_shape", [(1_000_000, 3)], ids=idfn)
+def test_large_broadcast(
+    gpu_number,
+    data_shape: Tuple[int, int],
+) -> None:
+    n_samples = data_shape[0]
+    n_features = data_shape[1]
+
+    conf = {
+        "spark.master": f"local[{gpu_number}]",
+        "spark.python.worker.reuse": "false",
+        "spark.driver.host": "127.0.0.1",
+        "spark.driver.memory": "100g",
+        "spark.sql.execution.arrow.pyspark.enabled": "true",
+        "spark.driver.maxResultSize": "1m",
+    }
+
+    from .conftest import _get_spark, _spark
+
+    _spark.stop()
+
+    from pyspark.sql import SparkSession
+
+    builder = SparkSession.builder
+    for key, value in conf.items():
+        builder.config(key, value)
+    spark = builder.getOrCreate()
+
+    def py_func(id):
+        return np.random.random(n_features).tolist()
+
+    pyspark_func = udf(lambda x: py_func(x), "array<float>")
+
+    id_col = "id"
+    features_col = "features"
+
+    data_df = spark.range(n_samples).withColumn("features", pyspark_func("id"))
+
+    print(f"debug numPartitions: {data_df.rdd.getNumPartitions()}")
+
+    # begin
+    def count_rows_in_partition(index, iterator):
+        count = sum(1 for _ in iterator)  # summing the number of rows in the iterator
+        return [(index, count)]
+
+    # Apply the function to the DataFrame's RDD
+    partition_counts = data_df.rdd.mapPartitionsWithIndex(
+        count_rows_in_partition
+    ).collect()
+
+    # Print the number of rows in each partition
+    for partition_id, count in partition_counts:
+        print(f"Partition {partition_id} has {count} rows")
+    # end
+
+    knn_est = (
+        ApproximateNearestNeighbors(algorithm="ivfflat")
+        .setInputCol(features_col)
+        .setIdCol(id_col)
+    )
+
+    knn_model = knn_est.fit(data_df)
+    bcast_qids, bcast_qfeatures = knn_model._broadcast_as_nparray(
+        data_df, BROADCAST_LIMIT=2 << 30
+    )
+
+    qid_all = _concat_and_free([chunk.value for chunk in bcast_qids])
+    qfeatures_all = _concat_and_free([chunk.value for chunk in bcast_qfeatures])
+
+    assert len(qid_all) == n_samples
+    assert qfeatures_all.shape == (n_samples, n_features)
+
+    _spark = _get_spark()

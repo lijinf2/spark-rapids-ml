@@ -824,8 +824,8 @@ class ApproximateNearestNeighborsModel(
 
         self._item_df_withid = item_df_withid
 
-        self.bcast_qids: Optional[Broadcast] = None
-        self.bcast_qfeatures: Optional[Broadcast] = None
+        self.bcast_qids: Optional[List[Broadcast]] = None
+        self.bcast_qfeatures: Optional[List[Broadcast]] = None
 
     def _out_schema(self) -> Union[StructType, str]:  # type: ignore
         return (
@@ -864,8 +864,8 @@ class ApproximateNearestNeighborsModel(
         self,
         query_df_withid: DataFrame,
         dtype: Union[str, np.dtype] = "float32",
-        BROADCAST_LIMIT: int = 8 << 30,
-    ) -> Tuple[Broadcast, Broadcast]:
+        BROADCAST_LIMIT: int = 1_000_000_000,
+    ) -> Tuple[List[Broadcast], List[Broadcast]]:
         """
         broadcast idCol and inputCol/inputCols of a query_df
         the broadcast splits an array by the BROADCAST_LIMIT bytes
@@ -882,20 +882,27 @@ class ApproximateNearestNeighborsModel(
 
         if input_is_multi_cols:
             assert len(query_pd.columns) == len(self.getInputCols())
-            query_features = query_pd.to_numpy()
+            query_features = query_pd.to_numpy(dtype=dtype)
         else:
             assert len(query_pd.columns) == 1
             query_features = np.array(list(query_pd[query_pd.columns[0]]), dtype=dtype)
 
-        # def _split_by_bytes(arr: np.ndarray) -> List[np.ndarray]:
-        #     if arr.nbytes <= BROADCAST_LIMIT:
-        #         return [arr]
-        #     rows_per_chunk = BROADCAST_LIMIT // arr.itemsize
-        #     num_chunks = (arr.shape[0] + rows_per_chunk - 1) // rows_per_chunk
-        #     return np.array_split(arr, num_chunks)
+        def _broadcast_by_bytes(arr: np.ndarray) -> List[Broadcast]:
+            rows_per_chunk = BROADCAST_LIMIT // (arr.nbytes // arr.shape[0])
+            assert (
+                rows_per_chunk > 0
+            ), "Please increase the BROADCAST_LIMIT to at least the number of bytes of a row"
 
-        bcast_qids = _get_spark_session().sparkContext.broadcast(query_ids)
-        bcast_qfeatures = _get_spark_session().sparkContext.broadcast(query_features)
+            num_chunks = (arr.shape[0] + rows_per_chunk - 1) // rows_per_chunk
+
+            res = []
+            for sub in np.array_split(arr, num_chunks):
+                res.append(_get_spark_session().sparkContext.broadcast(sub))
+
+            return res
+
+        bcast_qids = _broadcast_by_bytes(query_ids)
+        bcast_qfeatures = _broadcast_by_bytes(query_features)
 
         return (bcast_qids, bcast_qfeatures)
 
@@ -1013,7 +1020,8 @@ class ApproximateNearestNeighborsModel(
             nn_object.fit(item)
             import cupy as cp
 
-            distances, indices = nn_object.kneighbors(bcast_qfeatures.value)
+            qfeatures_all = _concat_and_free([chunk.value for chunk in bcast_qfeatures])
+            distances, indices = nn_object.kneighbors(qfeatures_all)
 
             if cuml_alg_params["algorithm"] == "ivfflat":
                 distances = distances * distances
@@ -1021,9 +1029,10 @@ class ApproximateNearestNeighborsModel(
             indices = indices.get()
             indices_global = item_row_number[indices]
 
+            qids_all = _concat_and_free([chunk.value for chunk in bcast_qids])
             res = pd.DataFrame(
                 {
-                    f"query_{id_col_name}": bcast_qids.value,
+                    f"query_{id_col_name}": qids_all,
                     "indices": list(indices_global),
                     "distances": list(distances.get()),
                 }
