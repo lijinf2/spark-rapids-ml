@@ -1986,3 +1986,32 @@ def test_standardization_sparse_example(
             tolerance,
             accuracy_and_probability_only=accuracy_and_probability_only,
         )
+
+
+@pytest.mark.slow
+def test_numeric_large():
+    conf = {
+        "spark.rapids.ml.uvm.enabled": True
+    }  # enable memory management to run the test case on GPU with small memory (e.g. 2G)
+    with CleanSparkSession(conf) as spark:
+
+        df = spark.read.parquet("/PATH/TO/DATASET")
+
+        #selected_cols = df.schema.names
+        selected_cols = ['borrower_credit_score']
+        from pyspark.sql.functions import col, array
+        df_float = df.select([col(col_name).cast("float") for col_name in df.schema.names])
+        
+        df_selected_cols = df_float.select([array(selected_cols).alias("features"), col("delinquency_12").alias("label")])
+        
+        
+        from pyspark.sql.functions import udf
+        from pyspark.ml.linalg import SparseVector, VectorUDT
+        
+        dimension = len(selected_cols)
+        def to_sparse_func(v) -> SparseVector:
+            return SparseVector(dimension, range(dimension), v)
+        
+        udf_to_sparse = udf(to_sparse_func, VectorUDT())
+        df_train= df_selected_cols.withColumn("features", udf_to_sparse("features"))
+    
