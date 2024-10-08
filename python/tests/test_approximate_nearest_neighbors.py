@@ -231,23 +231,18 @@ class ANNEvaluator:
         tolerance: float,
     ) -> None:
         # compare with cuml sg ANN on avg_recall and avg_dist_gap
-        if algorithm in {"ivfpq"}:
-            cumlsg_distances, cumlsg_indices = self.get_cuml_sg_results(
-                algorithm, algoParams
-            )
-        else:
-            cumlsg_distances, cumlsg_indices = self.get_cuvs_sg_results(
-                algorithm=algorithm, algoParams=algoParams
-            )
+        cuvssg_distances, cuvssg_indices = self.get_cuvs_sg_results(
+            algorithm=algorithm, algoParams=algoParams
+        )
 
         # compare cuml sg with given results
-        avg_recall_cumlann = self.cal_avg_recall(cumlsg_indices)
+        avg_recall_cumlann = self.cal_avg_recall(cuvssg_indices)
         avg_recall = self.cal_avg_recall(given_indices)
         assert (avg_recall > avg_recall_cumlann) or abs(
             avg_recall - avg_recall_cumlann
         ) < tolerance
 
-        avg_dist_gap_cumlann = self.cal_avg_dist_gap(cumlsg_distances)
+        avg_dist_gap_cumlann = self.cal_avg_dist_gap(cuvssg_distances)
         avg_dist_gap = self.cal_avg_dist_gap(given_distances)
         assert (avg_dist_gap < avg_dist_gap_cumlann) or abs(
             avg_dist_gap - avg_dist_gap_cumlann
@@ -300,6 +295,13 @@ class ANNEvaluator:
                 )
             )
             from cuvs.neighbors import ivf_flat as cuvs_algo
+        elif algorithm in {"ivf_pq", "ivfpq"}:
+            index_params, search_params = (
+                ApproximateNearestNeighborsModel._cal_cuvs_ivf_pq_params_and_check(
+                    algoParams=algoParams, metric=self.metric, topk=self.n_neighbors
+                )
+            )
+            from cuvs.neighbors import ivf_pq as cuvs_algo
         else:
             assert False, f"unrecognized algorithm {algorithm}"
 
@@ -568,7 +570,6 @@ def test_ivfflat(
                 "nprobe": 20,
                 "M": 20,
                 "n_bits": 4,
-                "usePrecomputedTables": False,
             },
             "euclidean",
         ),
@@ -581,7 +582,6 @@ def test_ivfflat(
                 "nprobe": 20,
                 "M": 40,
                 "n_bits": 4,
-                "usePrecomputedTables": True,
             },
             "sqeuclidean",
         ),
@@ -594,7 +594,6 @@ def test_ivfflat(
                 "nprobe": 20,
                 "M": 10,
                 "n_bits": 8,
-                "usePrecomputedTables": False,
             },
             "l2",
         ),
