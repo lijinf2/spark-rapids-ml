@@ -609,6 +609,18 @@ def test_ivfflat(
             },
             "inner_product",
         ),
+        (
+            "ivfpq",
+            "array",
+            3000,
+            {
+                "nlist": 100,
+                "nprobe": 20,
+                "M": 20,
+                "n_bits": 4,
+            },
+            "cosine",
+        ),
     ],
 )
 @pytest.mark.parametrize("data_shape", [(10000, 50)], ids=idfn)
@@ -627,7 +639,7 @@ def test_ivfpq(
     (2) ivfpq has become unstable in 24.10. It does not get passed with algoParam {"nlist" : 10, "nprobe" : 2, "M": 2, "n_bits": 4} in ci where test_ivfflat is run beforehand. avg_recall shows large variance, depending on the quantization accuracy. This can be fixed by increasing nlist, nprobe, M, and n_bits.
     """
     combo = (algorithm, feature_type, max_records_per_batch, algo_params, metric)
-    expected_avg_recall = 0.4
+    expected_avg_recall = 0.4 if metric != "cosine" else 0.1
     distances_are_exact = False
     tolerance = 0.05  # tolerance increased to be more stable due to quantization and randomness in ivfpq, especially when expected_recall is low.
 
