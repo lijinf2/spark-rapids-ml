@@ -1528,7 +1528,7 @@ class ApproximateNearestNeighborsModel(
                 nn_object
             ):  # derived class (e.g. benchmark.bench_nearest_neighbors.CPUNearestNeighborsModel)
                 distances, indices = nn_object.kneighbors(bcast_qfeatures.value)
-            else:  # cuvs ivf_flat cagra
+            else:  # cuvs ivf_flat cagra ivf_pq
                 gpu_qfeatures = cp.array(
                     bcast_qfeatures.value, order="C", dtype="float32"
                 )
@@ -1543,8 +1543,32 @@ class ApproximateNearestNeighborsModel(
                     gpu_qfeatures,
                     cuml_alg_params["n_neighbors"],
                 )
+
+                if cuml_alg_params["algorithm"] in {"ivf_pq", "ivfpq"}:
+                    from cuvs.neighbors import refine
+
+                    distances, indices = refine(
+                        dataset=item,
+                        queries=gpu_qfeatures,
+                        candidates=indices,
+                        k=cuml_alg_params["n_neighbors"],
+                        metric=cuml_alg_params["metric"],
+                    )
+
                 distances = cp.asarray(distances)
                 indices = cp.asarray(indices)
+
+                # in case refine API reset inf distances to 0.
+                if cuml_alg_params["algorithm"] in {"ivf_pq", "ivfpq"}:
+                    distances[indices >= len(item)] = float("inf")
+
+                    # for the case top-1 nn got filled into indices
+                    top1_ind = indices[:, 0]
+                    rest_indices = indices[:, 1:]
+                    rest_distances = distances[:, 1:]
+                    rest_distances[rest_indices == top1_ind[:, cp.newaxis]] = float(
+                        "inf"
+                    )
 
             if isinstance(distances, cp.ndarray):
                 distances = distances.get()

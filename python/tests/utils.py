@@ -117,7 +117,14 @@ def create_pyspark_dataframe(
         df = spark.createDataFrame(data.tolist(), ",".join(schema))
 
     if feature_type == feature_types.array:
-        df = df.withColumn("features", array(*feature_cols)).drop(*feature_cols)
+        # avoid calling df.withColumn here because runtime slowdown is observed when df has many columns (e.g. 3000).
+        from pyspark.sql.functions import col
+
+        selected_col = [array(*feature_cols).alias("features")]
+        if label_col:
+            selected_col.append(col(label_col).alias(label_col))
+        df = df.select(selected_col)
+
         feature_cols = "features"
     elif feature_type == feature_types.vector:
         df = (
@@ -128,6 +135,9 @@ def create_pyspark_dataframe(
             .drop(*feature_cols)
         )
         feature_cols = "features"
+    else:
+        # When df has many columns (e.g. 3000), the select here breaks the runtime slowdown observed at calling df.withColumn.
+        df = df.select("*")
 
     return df, feature_cols, label_col
 
