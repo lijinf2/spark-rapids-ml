@@ -947,7 +947,7 @@ class LogisticRegression(
         return "C"
 
     def _gpu_mem_ratio_for_data(self) -> Optional[float]:
-        return 0.9
+        return 0.05
 
     def _get_cuml_fit_func(
         self,

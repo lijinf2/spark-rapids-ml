@@ -321,7 +321,12 @@ def _concat_with_reserved_gpu_mem(
 
             device = cp.cuda.Device(0)
             free_mem, total_mem = device.mem_info
-            target_mem = int(free_mem * gpu_mem_ratio_for_data)
+            import psutil
+            psutil_mem = psutil.virtual_memory()
+            cache_mem = psutil_mem.cached
+            buff_mem = psutil_mem.buffers
+                
+            target_mem = int((free_mem + cache_mem + buff_mem) * gpu_mem_ratio_for_data)
 
             dimension = np_features.shape[1]
             nbytes_per_row = np_features[0].nbytes
@@ -330,7 +335,7 @@ def _concat_with_reserved_gpu_mem(
 
             target_n_rows = target_mem // nbytes_per_row
             logger.info(
-                f"Reserved {target_mem / 1000000}MB GPU memory for training dataset with dimension {dimension} and n_rows limit {target_n_rows / 1000000} million"
+                f"Detected {free_mem / 1000000}MB free mem, {cache_mem/1000000}MB cached mem, {buff_mem/1000000}MB buff mem. Reserved {target_mem / 1000000}MB GPU memory for training dataset with dimension {dimension} and n_rows limit {target_n_rows / 1000000} million"
             )
 
             cp_features = cp.empty(
