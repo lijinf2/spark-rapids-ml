@@ -523,9 +523,13 @@ class _CumlParams(_CumlClass, HasVerboseParam, Params):
             if cuml_param is None:
                 if not silent:
                     # if Spark Param is mapped to None, raise error
-                    raise ValueError(
-                        f"Spark Param '{spark_param}' is not supported by cuML."
+                    # raise ValueError(
+                    #    f"Spark Param '{spark_param}' is not supported by cuML."
+                    # )
+                    print(
+                        f"WARNING: Spark Param '{spark_param}' is not supported by cuML. Estimator will be run on CPU."
                     )
+                    cuml_param = None
             elif cuml_param == "":
                 # if Spark Param is mapped to empty string, warn and continue
                 if not silent:

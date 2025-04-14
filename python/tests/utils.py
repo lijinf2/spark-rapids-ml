@@ -229,7 +229,9 @@ def get_default_cuml_parameters(
     return params
 
 
-def get_toy_model(EstimatorCLS: Callable, spark: SparkSession) -> Model:
+def get_toy_model(
+    EstimatorCLS: Callable, spark: SparkSession, **init_kwargs: Any
+) -> Model:
     data = [
         Row(id=0, label=1.0, weight=1.0, features=Vectors.dense([0.0, 0.0, 1.0])),
         Row(id=1, label=1.0, weight=1.0, features=Vectors.dense([0.0, 1.0, 0.0])),
@@ -239,9 +241,9 @@ def get_toy_model(EstimatorCLS: Callable, spark: SparkSession) -> Model:
     train_df = spark.createDataFrame(data)
 
     if "spark_rapids_ml" in EstimatorCLS.__module__:
-        est = EstimatorCLS(num_workers=1)
+        est = EstimatorCLS(num_workers=1, **init_kwargs)
     else:
-        est = EstimatorCLS()
+        est = EstimatorCLS(**init_kwargs)
 
     if est.hasParam("inputCol"):
         est.setInputCol("features")

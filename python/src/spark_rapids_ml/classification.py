@@ -676,17 +676,17 @@ class LogisticRegressionClass(_CumlClass):
             "elasticNetParam": "l1_ratio",
             "tol": "tol",
             "fitIntercept": "fit_intercept",
-            "threshold": "",
-            "thresholds": "",
+            "threshold": None,
+            "thresholds": None,
             "standardization": "standardization",
-            "weightCol": "",
-            "aggregationDepth": "",
+            "weightCol": None,
+            "aggregationDepth": None,
             "family": "",  # family can be 'auto', 'binomial' or 'multinomial', cuml automatically detects num_classes
-            "lowerBoundsOnCoefficients": "",
-            "upperBoundsOnCoefficients": "",
-            "lowerBoundsOnIntercepts": "",
-            "upperBoundsOnIntercepts": "",
-            "maxBlockSizeInMB": "",
+            "lowerBoundsOnCoefficients": None,
+            "upperBoundsOnCoefficients": None,
+            "lowerBoundsOnIntercepts": None,
+            "upperBoundsOnIntercepts": None,
+            "maxBlockSizeInMB": None,
         }
 
     @classmethod
@@ -945,6 +945,29 @@ class LogisticRegression(
 
     def _fit_array_order(self) -> _ArrayOrder:
         return "C"
+
+    def _fit(  # type: ignore
+        self, dataset: DataFrame  # type: ignore
+    ) -> Union["LogisticRegressionModel", SparkLogisticRegressionModel]:  # type: ignore
+        """
+        fit only 1 model
+        TODO: support fit with ParamMap and fitMultiple
+        """
+
+        param_map = self._param_mapping()
+        for p, v in self._paramMap.items():
+            # skip {"verbose", "featuresCol", "labelCol"}
+            if p.name in param_map and param_map[p.name] == None:
+                # GPU fails to match a CPU param
+                from pyspark.ml.classification import (
+                    LogisticRegression as SparkLogisticRegression,
+                )
+
+                # return SparkLogisticRegression().fit(dataset, self._paramMap)
+
+                kwargs = {p.name: v for p, v in self._paramMap.items()}
+                return SparkLogisticRegression(**kwargs).fit(dataset)
+        return super()._fit(dataset)  # type: ignore
 
     def _get_cuml_fit_func(
         self,

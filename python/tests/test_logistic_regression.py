@@ -343,6 +343,29 @@ def test_param_init_setter_getter() -> None:
         _test_param_setter_getter(LogisticRegression, k, v)
 
 
+def test_unmapped_param_revert_to_cpu() -> None:
+
+    from .utils import _get_default_params_from_func, get_toy_model
+
+    with CleanSparkSession() as spark:
+        # spark_params = _get_default_params_from_func(SparkLogisticRegression, [])
+        param_map = LogisticRegression._param_mapping()
+
+        unmapped_pv = {"threshold": 0.2222}
+        for k, v in unmapped_pv.items():
+            assert param_map[k] == None
+            model = get_toy_model(LogisticRegression, spark, **{k: v})
+            assert isinstance(model, SparkLogisticRegressionModel)
+            assert model.getOrDefault(k) == v
+
+        mapped_pv = {"regParam": 0.11}
+        for k, v in mapped_pv.items():
+            assert param_map[k] != None
+            model = get_toy_model(LogisticRegression, spark, **{k: v, "verbose": True})
+            assert isinstance(model, LogisticRegressionModel)
+            assert model.getOrDefault(k) == v
+
+
 def test_lr_copy() -> None:
     from .test_common_estimator import _test_est_copy
 
