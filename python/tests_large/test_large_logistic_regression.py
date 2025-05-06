@@ -17,6 +17,7 @@ from typing import Any, Dict, Iterable
 
 import numpy as np
 import pandas as pd
+import pytest
 from gen_data_distributed import SparseRegressionDataGen
 from pyspark.ml.classification import LogisticRegression as SparkLogisticRegression
 from pyspark.sql import functions as SparkF
@@ -27,10 +28,14 @@ from tests.test_logistic_regression import compare_model
 from .conftest import _spark
 
 
-def test_sparse_int64(multi_gpus: bool = False) -> None:
+def test_sparse_int64(
+    multi_gpus: bool = False, standardization: bool = False, float32_inputs: bool = True
+) -> None:
     """
     This test requires minimum 128G CPU memory, 32 GB GPU memory
     TODO: move generated dataset to a unified place
+
+    if standardization is True, the test case reduces more GPU memory since standardization copies the value array
     """
     gpu_number = 2 if multi_gpus else 1
     output_num_files = 100  # large value smaller CPU memory for each spark task
@@ -44,7 +49,7 @@ def test_sparse_int64(multi_gpus: bool = False) -> None:
     est_params: Dict[str, Any] = {
         "regParam": 0.02,
         "maxIter": 10,
-        "standardization": False,  # reduce GPU memory since standardization copies the value array
+        "standardization": standardization,
     }
     density = 0.1
 
@@ -107,7 +112,12 @@ def test_sparse_int64(multi_gpus: bool = False) -> None:
     assert total_nnz > np.iinfo(np.int32).max
 
     # compare gpu with spark cpu
-    gpu_est = LogisticRegression(num_workers=gpu_number, verbose=True, **est_params)
+    gpu_est = LogisticRegression(
+        num_workers=gpu_number,
+        verbose=True,
+        float32_inputs=float32_inputs,
+        **est_params,
+    )
     gpu_model = gpu_est.fit(df_gpu)
     cpu_est = SparkLogisticRegression(**est_params)
     cpu_model = cpu_est.fit(df)
@@ -133,3 +143,10 @@ def test_sparse_int64(multi_gpus: bool = False) -> None:
 
 def test_sparse_int64_mg() -> None:
     test_sparse_int64(multi_gpus=True)
+
+
+@pytest.mark.parametrize("float32_inputs", [True, False])
+def test_sparse_int64_standardization(float32_inputs: bool) -> None:
+    test_sparse_int64(
+        multi_gpus=False, standardization=True, float32_inputs=float32_inputs
+    )
