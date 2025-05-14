@@ -717,7 +717,7 @@ class LogisticRegressionClass(_CumlClass):
         # Spark Rapids ML sets it to elasticNet_param to be compatible with Spark
         if reg_param == 0.0:
             penalty = None
-            C = 0.0
+            C = 0.0 # sklearn does not support C=0.
             l1_ratio = elasticNet_param
         elif elasticNet_param == 0.0:
             penalty = "l2"

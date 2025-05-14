@@ -19,7 +19,7 @@ import os
 
 from pyspark.sql import SparkSession
 
-_cpu_number = 32
+_cpu_number = 1 
 _default_conf = {
     "spark.master": f"local[{_cpu_number}]",
     "spark.python.worker.reuse": "false",
@@ -30,6 +30,9 @@ _default_conf = {
     "spark.sql.pyspark.jvmStacktrace.enabled": "true",
     "spark.sql.execution.arrow.pyspark.enabled": "true",
     "spark.rapids.ml.uvm.enabled": True,
+    "spark.local.dir": "/scratch/jinfeng/spark-tmp",
+    "spark.driver.extraJavaOptions": "-Djava.io.tmpdir=/scratch/jinfeng/spark-tmp/java_tmp",
+    # "spark.driver.extraJavaOptions": "-Dlog4j.configurationFile=/scratch/jinfeng/project/spark-rapids-ml/python/tests_large/log4j2.properties"
 }
 
 
