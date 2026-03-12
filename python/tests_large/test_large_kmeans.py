@@ -14,7 +14,6 @@
 # limitations under the License.
 #
 
-import pytest
 from gen_data_distributed import BlobsDataGen
 
 from spark_rapids_ml.clustering import KMeans
