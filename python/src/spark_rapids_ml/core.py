@@ -1225,6 +1225,10 @@ class _CumlEstimator(Estimator, _CumlCaller):
 
         self.logger.info("Finished training")
 
+        # Merge chunked fit result rows (e.g. KMeans large model) into one row per model
+        if paramMaps is None and len(rows) > 1 and hasattr(self, "_merge_model_chunks"):
+            rows = [self._merge_model_chunks(rows)]
+
         models: List["_CumlModel"] = [None]  # type: ignore
         if paramMaps is not None:
             models = [None] * len(paramMaps)  # type: ignore
