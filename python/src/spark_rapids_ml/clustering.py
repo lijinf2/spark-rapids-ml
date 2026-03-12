@@ -409,6 +409,15 @@ class KMeans(KMeansClass, _CumlEstimator, _KMeansCumlParams):
             n_cols = params[param_alias.num_cols]
             dtype_str = str(kmeans_object.cluster_centers_.dtype.name)
 
+            # fitMultiple (paramMap): do not chunk; return one row. Single model: chunk below.
+            # TODO: support chunking for fitMultiple in the future
+            if params.get(param_alias.fit_multiple_params):
+                return {
+                    "cluster_centers_": [all_centers],
+                    "n_cols": [n_cols],
+                    "dtype": [dtype_str],
+                }
+
             # Chunk centers so each row stays under Spark BufferHolder limit (~2^31 bytes).
             # Use 8 bytes per element (double); overestimate for float32 is safe (smaller chunks).
             max_bytes_per_chunk = 1024**3  # 1GB
