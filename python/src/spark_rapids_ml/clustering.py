@@ -405,10 +405,25 @@ class KMeans(KMeansClass, _CumlEstimator, _KMeansCumlParams):
                 f"iterations: {kmeans_object.n_iter_}, inertia: {kmeans_object.inertia_}"
             )
 
+            all_centers = kmeans_object.cluster_centers_.get().tolist()
+            n_cols = params[param_alias.num_cols]
+            dtype_str = str(kmeans_object.cluster_centers_.dtype.name)
+
+            # Chunk centers so each row stays under Spark BufferHolder limit (~2^31 bytes).
+            # Use 8 bytes per element (double); overestimate for float32 is safe (smaller chunks).
+            max_bytes_per_chunk = 1024**3  # 1GB
+            bytes_per_center = n_cols * 8
+            max_centers_per_chunk = max(1, max_bytes_per_chunk // bytes_per_center)
+
+            chunk_centers = []
+            for start in range(0, len(all_centers), max_centers_per_chunk):
+                end = min(start + max_centers_per_chunk, len(all_centers))
+                chunk_centers.append(all_centers[start:end])
+
             return {
-                "cluster_centers_": [kmeans_object.cluster_centers_.get().tolist()],
-                "n_cols": params[param_alias.num_cols],
-                "dtype": str(kmeans_object.cluster_centers_.dtype.name),
+                "cluster_centers_": chunk_centers,
+                "n_cols": [n_cols] * len(chunk_centers),
+                "dtype": [dtype_str] * len(chunk_centers),
             }
 
         return _cuml_fit
@@ -426,6 +441,19 @@ class KMeans(KMeansClass, _CumlEstimator, _KMeansCumlParams):
 
     def _create_pyspark_model(self, result: Row) -> "KMeansModel":
         return KMeansModel._from_row(result)
+
+    def _merge_model_chunks(self, rows: List[Row]) -> Row:
+        """Merge chunked fit result rows into one Row (avoids BufferHolder 2GB limit)."""
+        merged_centers: List[List[float]] = []
+        for row in rows:
+            merged_centers.extend(row["cluster_centers_"])
+        n_cols = rows[0]["n_cols"]
+        dtype = rows[0]["dtype"]
+        return Row(
+            cluster_centers_=merged_centers,
+            n_cols=n_cols,
+            dtype=dtype,
+        )
 
 
 class KMeansModel(KMeansClass, _CumlModelWithPredictionCol, _KMeansCumlParams):
