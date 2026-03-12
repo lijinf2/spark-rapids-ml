@@ -1231,6 +1231,10 @@ class _CumlEstimator(Estimator, _CumlCaller):
                 rows = [self._merge_model_chunks(rows)]
         elif paramMaps is None:
             assert len(rows) <= 1, f"Expected at most 1 row but got {len(rows)}"
+        else:
+            assert len(rows) == len(
+                paramMaps
+            ), f"Expected {len(paramMaps)} rows (one per param map) but got {len(rows)}"
 
         models: List["_CumlModel"] = [None]  # type: ignore
         if paramMaps is not None:
