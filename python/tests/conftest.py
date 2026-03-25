@@ -31,6 +31,7 @@ dir_path = os.path.dirname(os.path.realpath(__file__))
 gpu_discovery_script_path = f"{dir_path}/discover_gpu.sh"
 
 
+# return devices
 def _get_devices() -> List[str]:
     """This works only if driver is the same machine of worker."""
     completed = subprocess.run(gpu_discovery_script_path, stdout=subprocess.PIPE)
