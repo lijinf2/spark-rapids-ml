@@ -14,6 +14,9 @@
 # limitations under the License.
 #
 
+import cudf
+import numpy as np
+from cuml.cluster import KMeans as CumlKMeans
 from gen_data_distributed import BlobsDataGen
 
 from spark_rapids_ml.clustering import KMeans
@@ -54,6 +57,7 @@ def test_kmeans_large_model_exceeds_int32_max() -> None:
     ]
     data_gen = BlobsDataGen(data_gen_args)
     df, feature_cols, _ = data_gen.gen_dataframe_and_meta(_spark)
+    df = df.cache()
 
     kmeans = KMeans(
         num_workers=gpu_number,
@@ -65,11 +69,14 @@ def test_kmeans_large_model_exceeds_int32_max() -> None:
 
     kmeans_model = kmeans.fit(df)
 
-    # Verify model shape: 100k centers, each 4k dimensions
+    # Verify model shape
     assert len(kmeans_model.cluster_centers_) == n_centers
     assert len(kmeans_model.cluster_centers_[0]) == n_dimensions
     assert kmeans_model.n_cols == n_dimensions
 
-    # Model size in bytes (DoubleType on driver)
-    model_size_bytes = n_centers * n_dimensions * 8  # 3.2GB for 100k * 4k
-    assert model_size_bytes > 2 * (1024**3)  # exceeds 2GB
+    # Transform
+    pred_col = kmeans_model.getPredictionCol()
+    predictions = kmeans_model.transform(df)
+    assert predictions.count() == n_samples
+    pred_max = predictions.agg({pred_col: "max"}).head()[0]
+    assert pred_max < n_centers
