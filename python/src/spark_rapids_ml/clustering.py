@@ -453,7 +453,9 @@ class KMeans(KMeansClass, _CumlEstimator, _KMeansCumlParams):
         )
 
     def _create_pyspark_model(self, result: Row) -> "KMeansModel":
-        return KMeansModel._from_row(result)
+        attr_dict = result.asDict()
+        attr_dict.pop("chunk_id", None)
+        return KMeansModel(**attr_dict)
 
     def _merge_model_chunks(self, rows: List[Row]) -> Row:
         """Merge chunked fit result rows into one Row (avoids BufferHolder 2GB limit)."""
