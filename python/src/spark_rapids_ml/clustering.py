@@ -413,6 +413,7 @@ class KMeans(KMeansClass, _CumlEstimator, _KMeansCumlParams):
             # TODO: support chunking for fitMultiple in the future
             if params.get(param_alias.fit_multiple_params):
                 return {
+                    "chunk_id": [0],
                     "cluster_centers_": [all_centers],
                     "n_cols": [n_cols],
                     "dtype": [dtype_str],
@@ -429,10 +430,12 @@ class KMeans(KMeansClass, _CumlEstimator, _KMeansCumlParams):
                 end = min(start + max_centers_per_chunk, len(all_centers))
                 chunk_centers.append(all_centers[start:end])
 
+            n_chunks = len(chunk_centers)
             return {
+                "chunk_id": list(range(n_chunks)),
                 "cluster_centers_": chunk_centers,
-                "n_cols": [n_cols] * len(chunk_centers),
-                "dtype": [dtype_str] * len(chunk_centers),
+                "n_cols": [n_cols] * n_chunks,
+                "dtype": [dtype_str] * n_chunks,
             }
 
         return _cuml_fit
@@ -440,6 +443,7 @@ class KMeans(KMeansClass, _CumlEstimator, _KMeansCumlParams):
     def _out_schema(self) -> Union[StructType, str]:
         return StructType(
             [
+                StructField("chunk_id", IntegerType(), False),
                 StructField(
                     "cluster_centers_", ArrayType(ArrayType(DoubleType()), False), False
                 ),
@@ -453,11 +457,12 @@ class KMeans(KMeansClass, _CumlEstimator, _KMeansCumlParams):
 
     def _merge_model_chunks(self, rows: List[Row]) -> Row:
         """Merge chunked fit result rows into one Row (avoids BufferHolder 2GB limit)."""
+        sorted_rows = sorted(rows, key=lambda r: r["chunk_id"])
         merged_centers: List[List[float]] = []
-        for row in rows:
+        for row in sorted_rows:
             merged_centers.extend(row["cluster_centers_"])
-        n_cols = rows[0]["n_cols"]
-        dtype = rows[0]["dtype"]
+        n_cols = sorted_rows[0]["n_cols"]
+        dtype = sorted_rows[0]["dtype"]
         return Row(
             cluster_centers_=merged_centers,
             n_cols=n_cols,
