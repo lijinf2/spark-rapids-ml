@@ -494,6 +494,8 @@ class KMeans(KMeansClass, _CumlEstimator, _KMeansCumlParams):
             if len(rows) == 0:
                 raise ValueError("Expected at least one fit result row but got none")
             return [_one_model_row(rows)]
+
+        # fitMultiple case: chunking not supported, just remove chunk_id from each row.
         assert len(rows) == len(
             paramMaps
         ), f"Expected {len(paramMaps)} rows (one per param map) but got {len(rows)}"
