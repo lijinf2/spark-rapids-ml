@@ -453,6 +453,9 @@ class KMeans(KMeansClass, _CumlEstimator, _KMeansCumlParams):
         )
 
     def _create_pyspark_model(self, result: Row) -> "KMeansModel":
+        """One collected row per model (``fit`` or ``fitMultiple``). Drop ``chunk_id`` when
+        present (e.g. ``fitMultiple`` does not go through ``_merge_model_chunks``).
+        """
         attr_dict = result.asDict()
         attr_dict.pop("chunk_id", None)
         return KMeansModel(**attr_dict)
