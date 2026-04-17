@@ -1088,25 +1088,38 @@ class _CumlEstimator(Estimator, _CumlCaller):
         """
         raise NotImplementedError()
 
-    def _merge_model_chunks(self, rows: List[Row]) -> Row:
-        """Merge chunk rows after a single-model ``fit`` (not used for ``fitMultiple``).
+    def _merge_model_chunks(
+        self,
+        rows: List[Row],
+        paramMaps: Optional[Sequence["ParamMap"]] = None,
+    ) -> List[Row]:
+        """Normalize collected fit rows before building models.
 
-        Spark limits serialized row payload size (roughly the ~2GB BufferHolder cap). If a
-        trained model would exceed that, an estimator must shard it so each chunk is
-        collected as its own Row, then override this method to stitch those Rows back
-        into one logical model Row.
+        Single ``fit`` (``paramMaps is None``): default returns one collected Row unchanged,
+        or raises ``NotImplementedError`` if multiple Rows are present—there is no base
+        implementation for merging sharded model chunks across Rows.
 
-        If there is only one Row, it is returned unchanged. If there are several and this
-        method is not overridden, ``NotImplementedError`` is raised.
+        ``fitMultiple`` (``paramMaps`` set): one Row per param map; default returns them
+        unchanged;
+
+        Very large models can exceed Spark's per-row serialization limit (~2GB BufferHolder)
+        even as ``one Row per model``; estimators that shard a fit result across multiple
+        Rows must override this method to merge chunks. The same limit applies in principle
+        to each ``fitMultiple`` model Row.
         """
-        n = len(rows)
-        if n == 0:
-            raise ValueError("Expected at least one fit result row but got none")
-        if n == 1:
-            return rows[0]
-        raise NotImplementedError(
-            "Merging multiple fit result rows is not implemented for this estimator"
-        )
+        if paramMaps is None:
+            n = len(rows)
+            if n == 0:
+                raise ValueError("Expected at least one fit result row but got none")
+            if n == 1:
+                return [rows[0]]
+            raise NotImplementedError(
+                "Merging multiple fit result rows is not implemented for this estimator"
+            )
+        assert len(rows) == len(
+            paramMaps
+        ), f"Expected {len(paramMaps)} rows (one per param map) but got {len(rows)}"
+        return list(rows)
 
     def _handle_param_spark_confs(self) -> None:
         """
@@ -1245,14 +1258,7 @@ class _CumlEstimator(Estimator, _CumlCaller):
 
         self.logger.info("Finished training")
 
-        if paramMaps is None:
-            # single model
-            rows = [self._merge_model_chunks(rows)]
-        else:
-            # multiple models
-            assert len(rows) == len(
-                paramMaps
-            ), f"Expected {len(paramMaps)} rows (one per param map) but got {len(rows)}"
+        rows = self._merge_model_chunks(rows, paramMaps)
 
         models: List["_CumlModel"] = [None]  # type: ignore
         if paramMaps is not None:

@@ -15,7 +15,22 @@
 #
 
 from abc import ABCMeta
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+    cast,
+)
+
+if TYPE_CHECKING:
+    from pyspark.ml._typing import ParamMap
 
 import numpy as np
 import pandas as pd
@@ -453,26 +468,36 @@ class KMeans(KMeansClass, _CumlEstimator, _KMeansCumlParams):
         )
 
     def _create_pyspark_model(self, result: Row) -> "KMeansModel":
-        """One collected row per model (``fit`` or ``fitMultiple``). Drop ``chunk_id`` when
-        present (e.g. ``fitMultiple`` does not go through ``_merge_model_chunks``).
-        """
-        attr_dict = result.asDict()
-        attr_dict.pop("chunk_id", None)
-        return KMeansModel(**attr_dict)
+        return KMeansModel(**result.asDict())
 
-    def _merge_model_chunks(self, rows: List[Row]) -> Row:
-        """Merge chunked fit result rows into one Row (avoids BufferHolder 2GB limit)."""
-        sorted_rows = sorted(rows, key=lambda r: r["chunk_id"])
-        merged_centers: List[List[float]] = []
-        for row in sorted_rows:
-            merged_centers.extend(row["cluster_centers_"])
-        n_cols = sorted_rows[0]["n_cols"]
-        dtype = sorted_rows[0]["dtype"]
-        return Row(
-            cluster_centers_=merged_centers,
-            n_cols=n_cols,
-            dtype=dtype,
-        )
+    def _merge_model_chunks(
+        self,
+        rows: List[Row],
+        paramMaps: Optional[Sequence["ParamMap"]] = None,
+    ) -> List[Row]:
+        """Override ``_CumlEstimator._merge_model_chunks`` for KMeans (center chunks, drops ``chunk_id``)."""
+
+        def _one_model_row(chunk_rows: List[Row]) -> Row:
+            sorted_rows = sorted(chunk_rows, key=lambda r: r["chunk_id"])
+            merged_centers: List[List[float]] = []
+            for row in sorted_rows:
+                merged_centers.extend(row["cluster_centers_"])
+            n_cols = sorted_rows[0]["n_cols"]
+            dtype = sorted_rows[0]["dtype"]
+            return Row(
+                cluster_centers_=merged_centers,
+                n_cols=n_cols,
+                dtype=dtype,
+            )
+
+        if paramMaps is None:
+            if len(rows) == 0:
+                raise ValueError("Expected at least one fit result row but got none")
+            return [_one_model_row(rows)]
+        assert len(rows) == len(
+            paramMaps
+        ), f"Expected {len(paramMaps)} rows (one per param map) but got {len(rows)}"
+        return [_one_model_row([r]) for r in rows]
 
 
 class KMeansModel(KMeansClass, _CumlModelWithPredictionCol, _KMeansCumlParams):
